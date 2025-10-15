@@ -66,9 +66,6 @@ This function is used by the default actions in the
 'macher-actions-alist', and provided as a convenience for defining
 custom actions with the same workflow."
 
-  ;; Prompt to save any unsaved buffers.
-  (save-some-buffers nil (lambda () (and (buffer-file-name) (buffer-modified-p))))
-
   (let* ((user-input
           (cond
            ;; If INPUT is explicitly provided, use it directly.
@@ -1465,83 +1462,82 @@ If only LIMIT is provided, returns the first LIMIT lines.
 If both are provided, returns LIMIT lines starting from OFFSET.
 
 Returns the processed content as a string."
-  (if (and (not offset) (not limit) (not show-line-numbers))
-      ;; Return full content if no parameters provided.
-      content
-    (let* ((lines (split-string content "\n"))
-           (num-lines (length lines))
-           (start-idx
-            (if offset
-                (cond
-                 ;; Negative offset: start at that many lines before the end.
-                 ((< offset 0)
-                  (max 0 (+ num-lines offset)))
-                 ;; Zero or positive offset: 1-based indexing (treat 0 as 1).
-                 (t
-                  (max 0 (min (1- (max 1 offset)) num-lines))))
-              0))
-           (actual-limit
-            (when limit
+  (let* ((lines (split-string content "\n"))
+         (num-lines (length lines))
+         (offset (or offset 0))
+         (limit (or limit 0))
+         (start-idx
+          (if offset
               (cond
-               ;; Negative limit: equivalent to total lines - (negative limit value).
-               ((< limit 0)
-                (max 0 (+ num-lines limit)))
-               ;; Zero or positive limit: use as-is.
+               ;; Negative or zero offset: start at that many lines before the end.
+               ((<= offset 0)
+                (max 0 (+ num-lines offset)))
+               ;; Positive offset: 1-based indexing (treat 0 as 1).
                (t
-                limit))))
-           (end-idx
-            (if actual-limit
-                (min num-lines (+ start-idx actual-limit))
-              num-lines))
-           (selected-lines (seq-subseq lines start-idx end-idx)))
-      (cond
-       (show-line-numbers
-        ;; Format with line numbers (cat -n style).
-        (let* ((actual-start-line (1+ start-idx))
-               ;; `cat -n` includes the trailing newline if present, but doesn't number it. We
-               ;; handle this as a special case. If:
-               ;;
-               ;; - the last line is empty
-               ;; - we're looking at the actual last line of the content (i.e. not a blank line in
-               ;;   the middle)
-               ;; - there's more than one line (since `cat -n` on a completely blank file does show
-               ;;   line number 1
-               ;;
-               ;; then exclude the last line from the list of lines to be numbered, and add it back
-               ;; at the end.
-               (should-exclude-final-empty
-                (and (= end-idx num-lines) ; processing to end.
-                     (> (length selected-lines) 1) ; we have more than one line.
-                     (string-empty-p (car (last selected-lines))))) ; last line is empty.
-               (lines-to-number
-                (if should-exclude-final-empty
-                    (butlast selected-lines)
-                  selected-lines))
-               (max-line-num (+ actual-start-line (length lines-to-number) -1))
-               (line-num-width
-                (if (> (length lines-to-number) 0)
-                    (length (number-to-string max-line-num))
-                  1))
-               (formatted-lines
-                (cl-loop
-                 for
-                 line
-                 in
-                 lines-to-number
-                 for
-                 line-num
-                 from
-                 actual-start-line
-                 collect
-                 (format (concat "%" (number-to-string line-num-width) "d\t%s") line-num line)))
-               (result (string-join formatted-lines "\n")))
-          ;; Add the final trailing newline if we excluded the final empty line
-          (if should-exclude-final-empty
-              (concat result "\n")
-            result)))
-       ;; Regular format without line numbers.
-       (t
-        (string-join selected-lines "\n"))))))
+                (max 0 (min (1- (max 1 offset)) num-lines))))
+            0))
+         (actual-limit
+          (when limit
+            (cond
+             ;; Negative limit: equivalent to total lines - (negative limit value).
+             ((< limit 0)
+              (max 0 (+ num-lines limit)))
+             ;; Zero or positive limit: use as-is.
+             (t
+              limit))))
+         (end-idx
+          (if actual-limit
+              (min num-lines (+ start-idx actual-limit))
+            num-lines))
+         (selected-lines (seq-subseq lines start-idx end-idx)))
+    (cond
+     (show-line-numbers
+      ;; Format with line numbers (cat -n style).
+      (let* ((actual-start-line (1+ start-idx))
+             ;; `cat -n` includes the trailing newline if present, but doesn't number it. We
+             ;; handle this as a special case. If:
+             ;;
+             ;; - the last line is empty
+             ;; - we're looking at the actual last line of the content (i.e. not a blank line in
+             ;;   the middle)
+             ;; - there's more than one line (since `cat -n` on a completely blank file does show
+             ;;   line number 1
+             ;;
+             ;; then exclude the last line from the list of lines to be numbered, and add it back
+             ;; at the end.
+             (should-exclude-final-empty
+              (and (= end-idx num-lines) ; processing to end.
+                   (> (length selected-lines) 1) ; we have more than one line.
+                   (string-empty-p (car (last selected-lines))))) ; last line is empty.
+             (lines-to-number
+              (if should-exclude-final-empty
+                  (butlast selected-lines)
+                selected-lines))
+             (max-line-num (+ actual-start-line (length lines-to-number) -1))
+             (line-num-width
+              (if (> (length lines-to-number) 0)
+                  (length (number-to-string max-line-num))
+                1))
+             (formatted-lines
+              (cl-loop
+               for
+               line
+               in
+               lines-to-number
+               for
+               line-num
+               from
+               actual-start-line
+               collect
+               (format (concat "%" (number-to-string line-num-width) "d\t%s") line-num line)))
+             (result (string-join formatted-lines "\n")))
+        ;; Add the final trailing newline if we excluded the final empty line
+        (if should-exclude-final-empty
+            (concat result "\n")
+          result)))
+     ;; Regular format without line numbers.
+     (t
+      (string-join selected-lines "\n")))))
 
 (defun macher--with-workspace-file (context path callback &optional set-dirty-p)
   "Helper function to execute CALLBACK with workspace file content.
@@ -2588,12 +2584,11 @@ the global gptel registry when the request completes."
      "Read file contents in the workspace.\n"
      "\n"
      "USAGE RULES:\n"
-     "1. NEVER re-read files that were already provided in the REQUEST CONTEXT\n"
-     "2. For files NOT in the REQUEST CONTEXT: try reading the ENTIRE file first "
-     "(no offset/limit) to understand its structure\n"
+     "1. NEVER read a file twice unless you KNOW it has changed.\n"
+     "2. Read the entire file by default. Only read a segment if you have a specific line number like in an error message or specific function reference."
      "\n"
-     "!!! CRITICAL: You MUST NOT use this tool to read files whose contents were already "
-     "provided to you in the REQUEST CONTEXT, except to resolve confusion or verify edits.\n"
+     "!!! CRITICAL: You MUST NOT use this tool to re-read a file"
+     "unless you are confident it has changed (you have edited, command output, etc).\n"
      "\n"
      "Returns the file contents as a string.")
     :confirm nil
@@ -2606,26 +2601,27 @@ the global gptel registry when the request completes."
        :optional t
        :description
        ,(concat
-         "Line number to start reading from (1-based). For negative values, starts at that many "
-         "lines before the end of the file. ONLY use for targeted re-reads - read entire file first!"))
+         "OPTIONAL - OMIT unless doing targeted re-read. Starting line number using"
+         "1-BASED indexing (line 1 = first line, line 50 = 50th line)."
+         "DO NOT pass 0 - omit the parameter instead to read from beginning."))
       (:name
        "limit"
        :type number
        :optional t
        :description
        ,(concat
-         "Number of lines to read from the start position. For negative values, the actual "
-         "limit is computed as (total_lines + limit). For example, with a 100-line file: "
-         "limit=10 reads 10 lines, limit=-10 reads 90 lines (100 + (-10)). "
-         "ONLY use for targeted re-reads - read entire file first!"))
+         "OPTIONAL - OMIT unless doing targeted re-read."
+         "Maximum number of lines to read."
+         "OMIT THIS to read all remaining lines (most common)."
+         "Examples: 10 reads 10 lines, 100 reads 100 lines."))
       (:name
        "show_line_numbers"
        :type boolean
        :optional t
        :description
        ,(concat
-         "Include line numbers in output (cat -n style: each line prefixed with right-aligned "
-         "line number and a tab character)"))))
+         "OPTIONAL - OMIT for plain output."
+         "Set to true only if you need line numbers prefixed to each line."))))
 
    (funcall make-tool-function
             :name "list_directory_in_workspace"
