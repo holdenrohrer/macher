@@ -1469,26 +1469,23 @@ Returns the processed content as a string."
          (start-idx
           (if offset
               (cond
-               ;; Negative or zero offset: start at that many lines before the end.
-               ((<= offset 0)
+               ;; Negative offset: start at that many lines before the end.
+               ((< offset 0)
                 (max 0 (+ num-lines offset)))
-               ;; Positive offset: 1-based indexing (treat 0 as 1).
+               ;; Positive or zero offset: 1-based indexing (treat 0 as 1).
                (t
                 (max 0 (min (1- (max 1 offset)) num-lines))))
             0))
          (actual-limit
-          (when limit
-            (cond
-             ;; Negative limit: equivalent to total lines - (negative limit value).
-             ((< limit 0)
-              (max 0 (+ num-lines limit)))
-             ;; Zero or positive limit: use as-is.
-             (t
-              limit))))
+           (cond
+            ;; Negative or zero limit: equivalent to total lines - (negative limit value).
+            ((<= limit 0)
+             (max 0 (+ num-lines limit)))
+            ;; Positive limit: use as-is.
+            (t
+             limit)))
          (end-idx
-          (if actual-limit
-              (min num-lines (+ start-idx actual-limit))
-            num-lines))
+            (min num-lines (+ start-idx actual-limit)))
          (selected-lines (seq-subseq lines start-idx end-idx)))
     (cond
      (show-line-numbers
@@ -2596,32 +2593,33 @@ the global gptel registry when the request completes."
     :args
     `((:name "path" :type string :description "Path to the file, relative to workspace root")
       (:name
-       "offset"
+       "start"
        :type number
        :optional t
        :description
        ,(concat
-         "OPTIONAL - OMIT unless doing targeted re-read. Starting line number using"
+         "Starting line number using"
          "1-BASED indexing (line 1 = first line, line 50 = 50th line)."
-         "DO NOT pass 0 - omit the parameter instead to read from beginning."))
+         "Default Value: 1"
+         "Supports python-style negative indices."))
       (:name
-       "limit"
+       "end"
        :type number
        :optional t
        :description
        ,(concat
-         "OPTIONAL - OMIT unless doing targeted re-read."
-         "Maximum number of lines to read."
-         "OMIT THIS to read all remaining lines (most common)."
-         "Examples: 10 reads 10 lines, 100 reads 100 lines."))
+         "Ending line number using"
+         "1-BASED indexing (line 1 = first line, line 50 = 50th line)."
+         "Default value: 0 (read all lines)."
+         "Supports python-style negative indices."))
       (:name
        "show_line_numbers"
        :type boolean
        :optional t
        :description
        ,(concat
-         "OPTIONAL - OMIT for plain output."
-         "Set to true only if you need line numbers prefixed to each line."))))
+         "Set to true only if you need line numbers prefixed to each line."
+         "Default value: false"))))
 
    (funcall make-tool-function
             :name "list_directory_in_workspace"
