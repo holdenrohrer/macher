@@ -910,6 +910,15 @@ workspace, without needing to put the full path in the buffer name."
                (length chars))))
         (setq result (concat result (substring chars idx (1+ idx))))))))
 
+(defun macher--prompt-transform (args)
+  (seq-reduce #'funcall gptel-macher--prompt-transform-functions args))
+
+(defvar gptel-macher--prompt-transform-functions
+           "List of functions to run during the macher stage of prompt
+           transformation. Will be run in order, just like
+           transformations in gptel-prompt-transformation-functions."
+           nil)
+
 (defun macher--action-buffer-setup-basic ()
   "Set up basic common behavior for action buffers.
 
@@ -3304,7 +3313,7 @@ If no workspace can be determined from the current buffer, returns (nil
 
   (if-let ((workspace (macher-workspace)))
     (let* ((context (macher--make-context :workspace workspace))
-           (prompt-transforms (plist-get preset :prompt-transform-functions))
+           (prompt-transforms (plist-get preset :macher--prompt-transform-functions))
 
            ;; Handler for the first state machine transtion, i.e. as soon as the request is sent.
            (transition-handler-invoked nil)
@@ -3361,7 +3370,7 @@ If no workspace can be determined from the current buffer, returns (nil
       ;; Return the context and the updated preset.
       (cons
        context
-       (plist-put (copy-sequence preset) :prompt-transform-functions updated-prompt-transforms)))
+       (plist-put (copy-sequence preset) :macher--prompt-transform-functions updated-prompt-transforms)))
     (cons nil preset)))
 
 ;;; Preset Definitions
@@ -3445,7 +3454,7 @@ implementation details of the gptel preset system."
      ,(macher--functional-preset
        #'macher--preset-default
        :description "Send macher workspace context + tools to read files and propose edits"
-       :prompt-transform-functions nil
+       :macher--prompt-transform-functions nil
        :tools nil
        :use-tools nil))
     (macher-ro
@@ -3453,7 +3462,7 @@ implementation details of the gptel preset system."
      ,(macher--functional-preset
        #'macher--preset-ro
        :description "Send macher workspace context + tools to read files"
-       :prompt-transform-functions nil
+       :macher--prompt-transform-functions nil
        :tools nil
        :use-tools nil))
     (macher-notools
@@ -3461,7 +3470,7 @@ implementation details of the gptel preset system."
      ,(macher--functional-preset
        #'macher--preset-notools
        :description "Send macher workspace context without tools"
-       :prompt-transform-functions nil)))
+       :macher--prompt-transform-functions nil)))
   "Alist of definitions for macher presets.
 
 Entries have the form (NAME . KEYS). NAME is the name to use (by
@@ -3520,8 +3529,8 @@ CALLBACK takes no arguments."
 
 (defun macher--preset-notools ()
   "Set up the macher preset without tools (context only)."
-  `(:prompt-transform-functions
-    ,(append gptel-prompt-transform-functions (list #'macher--prompt-transform-add-context))))
+  `(:macher--prompt-transform-functions
+    ,(list #'macher--prompt-transform-add-context)))
 
 (defun macher--prompt-transform-add-context (callback fsm)
   "A gptel prompt transformer to add context from the current workspace.
@@ -3754,7 +3763,8 @@ globally. For example:
               preset-name)))
       ;; Only register the preset if actual-name is not nil.
       (when actual-name
-        (apply #'gptel-make-preset actual-name preset-config)))))
+        (apply #'gptel-make-preset actual-name preset-config))))
+  (add-to-list 'gptel-prompt-transform-functions 'macher--prompt-transform t))
 
 ;;;###autoload
 (defun macher-action (action &optional callback &rest action-args)
